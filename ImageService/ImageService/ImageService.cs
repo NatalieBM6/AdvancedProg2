@@ -1,134 +1,136 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
 using System.ServiceProcess;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using ImageService.Server;
-using ImageService.Controller;
-using ImageService.Modal;
+using System.Runtime.InteropServices;
 using ImageService.Logging;
 using ImageService.Logging.Modal;
-using System.Configuration;
-using ImageService.Infrastructure;
-
-public enum ServiceState
-{
-    SERVICE_STOPPED = 0x00000001,
-    SERVICE_START_PENDING = 0x00000002,
-    SERVICE_STOP_PENDING = 0x00000003,
-    SERVICE_RUNNING = 0x00000004,
-    SERVICE_CONTINUE_PENDING = 0x00000005,
-    SERVICE_PAUSE_PENDING = 0x00000006,
-    SERVICE_PAUSED = 0x00000007,
-}
-
-[StructLayout(LayoutKind.Sequential)]
-public struct ServiceStatus
-{
-    public int dwServiceType;
-    public ServiceState dwCurrentState;
-    public int dwControlsAccepted;
-    public int dwWin32ExitCode;
-    public int dwServiceSpecificExitCode;
-    public int dwCheckPoint;
-    public int dwWaitHint;
-};
+using ImageService.Modal;
+using ImageService.Controller;
+using ImageService.Server;
 
 namespace ImageService
 {
+    public enum ServiceState
+    {
+        SERVICE_STOPPED = 0x00000001,
+        SERVICE_START_PENDING = 0x00000002,
+        SERVICE_STOP_PENDING = 0x00000003,
+        SERVICE_RUNNING = 0x00000004,
+        SERVICE_CONTINUE_PENDING = 0x00000005,
+        SERVICE_PAUSE_PENDING = 0x00000006,
+        SERVICE_PAUSED = 0x00000007,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ServiceStatus
+    {
+        public int dwServiceType;
+        public ServiceState dwCurrentState;
+        public int dwControlsAccepted;
+        public int dwWin32ExitCode;
+        public int dwServiceSpecificExitCode;
+        public int dwCheckPoint;
+        public int dwWaitHint;
+    };
+
     public partial class ImageService : ServiceBase
     {
-        private int eventId = 1;
-        private ImageServer m_imageServer;          // The Image Server
-        private IImageServiceModal modal;
-        private IImageController controller;
-        private ILoggingService logging;
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool SetServiceStatus(IntPtr handle, ref ServiceStatus serviceStatus);
-
-        public ImageService(string[] args)
+        private System.ComponentModel.IContainer components;
+        private System.Diagnostics.EventLog eventLog1;
+        
+        public ImageService()
         {
             InitializeComponent();
-            string eventSourceName = ConfigurationManager.AppSettings["SourceName"];
-            string logName = ConfigurationManager.AppSettings["LogName"];
-            if (args.Count() > 0)
-            {
-                eventSourceName = args[0];
-            }
-            if (args.Count() > 1)
-            {
-                logName = args[1];
-            }
             eventLog1 = new System.Diagnostics.EventLog();
-            if (!System.Diagnostics.EventLog.SourceExists(eventSourceName))
+            if (!System.Diagnostics.EventLog.SourceExists("MySource"))
             {
-                System.Diagnostics.EventLog.CreateEventSource(eventSourceName, logName);
+                System.Diagnostics.EventLog.CreateEventSource("MySource", "MyNewLog");
             }
-            eventLog1.Source = eventSourceName;
-            eventLog1.Log = logName;
-
-            logging = new LoggingService();
-            logging.MessageRecieved += OnMessage;
+            eventLog1.Source = "MySource";
+            eventLog1.Log = "MyNewLog";
         }
 
         protected override void OnStart(string[] args)
         {
+            eventLog1.WriteEntry("In OnStart");
+
             // Update the service state to Start Pending.  
             ServiceStatus serviceStatus = new ServiceStatus();
             serviceStatus.dwCurrentState = ServiceState.SERVICE_START_PENDING;
             serviceStatus.dwWaitHint = 100000;
             SetServiceStatus(this.ServiceHandle, ref serviceStatus);
 
-            logging.Log("In OnStart", MessageTypeEnum.INFO);
-
-            // Set up a timer to trigger every minute.  
-            System.Timers.Timer timer = new System.Timers.Timer();
-            timer.Interval = 60000; // 60 seconds  
-            timer.Elapsed += new System.Timers.ElapsedEventHandler(this.OnTimer);
-            timer.Start();
-
             // Update the service state to Running.  
             serviceStatus.dwCurrentState = ServiceState.SERVICE_RUNNING;
             SetServiceStatus(this.ServiceHandle, ref serviceStatus);
 
-            modal = new ImageServiceModal();
-            //            controller = new ImageController(modal);
-            m_imageServer = new ImageServer(logging, modal);
+            // creating our logger
+            ILoggingService logger = new LoggingService();
+            logger.MessageReceived += OnMessage;
+            
+            // creating the ImageModal, need still to give the right parametres
+            IImageServiceModal modal = new ImageServiceModal("C:\\Users\\simbe\\Desktop\\output", 120);
 
+            // creating the Controller
+            IImageController controller = new ImageController(modal);
+
+            // creating the Server, need still to give the right parametres
+            ImageServer server = new ImageServer(controller, logger, new string[] { "C:\\Users\\simbe\\Desktop\\my_images" });
         }
 
-        public void OnMessage(object sender, MessageRecievedEventArgs e)
+        protected override void OnPause()
         {
-            eventLog1.WriteEntry(e.Message);
+            eventLog1.WriteEntry("In OnPause");
+
+            // Update the service state to Pause Pending.  
+            ServiceStatus serviceStatus = new ServiceStatus();
+            serviceStatus.dwCurrentState = ServiceState.SERVICE_PAUSE_PENDING;
+            serviceStatus.dwWaitHint = 100000;
+            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
+
+            // Update the service state to Paused.  
+            serviceStatus.dwCurrentState = ServiceState.SERVICE_PAUSED;
+            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
         }
 
-        public void OnTimer(object sender, System.Timers.ElapsedEventArgs args)
+        protected override void OnContinue()
         {
-            // TODO: Insert monitoring activities here.  
-            eventLog1.WriteEntry("Monitoring the System", EventLogEntryType.Information, eventId++);
+            eventLog1.WriteEntry("In OnContinue");
+
+            // Update the service state to Continue Pending.  
+            ServiceStatus serviceStatus = new ServiceStatus();
+            serviceStatus.dwCurrentState = ServiceState.SERVICE_CONTINUE_PENDING;
+            serviceStatus.dwWaitHint = 100000;
+            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
         }
 
         protected override void OnStop()
         {
-            // Update the service state to Start Pending.  
+            eventLog1.WriteEntry("In onStop.");
+
+            // Update the service state to Stop Pending.  
             ServiceStatus serviceStatus = new ServiceStatus();
             serviceStatus.dwCurrentState = ServiceState.SERVICE_STOP_PENDING;
             serviceStatus.dwWaitHint = 100000;
             SetServiceStatus(this.ServiceHandle, ref serviceStatus);
 
-            logging.Log("In OnStop", MessageTypeEnum.INFO);
-
-            // Update the service state to Running.  
+            // Update the service state to Stopped.  
             serviceStatus.dwCurrentState = ServiceState.SERVICE_STOPPED;
             SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-
-            m_imageServer.CloseServer();
         }
+
+        private void OnMessage(object sender, MessageRecievedEventArgs e)
+        {
+            eventLog1.WriteEntry(e.Message);
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool SetServiceStatus(IntPtr handle, ref ServiceStatus serviceStatus);
     }
 }
