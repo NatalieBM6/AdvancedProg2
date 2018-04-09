@@ -22,8 +22,8 @@ namespace ImageService.Server
         #endregion
 
         #region Properties
-        public event EventHandler<CommandRecievedEventArgs> CommandRecieved;         // The event that notifies about a new Command being recieved
-        public event EventHandler<DirectoryCloseEventArgs> CloseCommand;            // The event that notifies that the service is close and that the server should close
+        public event EventHandler<CommandRecievedEventArgs> CommandRecieved;
+        public event EventHandler<DirectoryCloseEventArgs> CloseCommand;
         #endregion
 
         public ImageServer(ILoggingService logging, IImageServiceModal modal)
@@ -51,7 +51,7 @@ namespace ImageService.Server
             {
                 CommandRecieved += h.OnCommandRecieved;
                 h.DirectoryClose += CloseCommand;
-                m_logging.Log("starting handler for directory: " + directory, Logging.Modal.MessageTypeEnum.INFO);
+                m_logging.Log("Starting handler for the directory: " + directory, Logging.Modal.MessageTypeEnum.INFO);
 
                 return h;
             }
@@ -68,7 +68,7 @@ namespace ImageService.Server
 
         public void CloseServer()
         {
-            m_logging.Log("closing the server.", Logging.Modal.MessageTypeEnum.INFO);
+            m_logging.Log("Closing the server.", Logging.Modal.MessageTypeEnum.INFO);
             CloseCommand?.Invoke(this, null);
         }
 
