@@ -34,8 +34,8 @@ namespace ImageService.Modal
                 if (result == false)
                     return response;
 
-                //checks if a picture with the same name is already exists in folder. If it does, add the name
-                // of the picture the number of appearence in this folder.
+                //checks if a picture with the same name already exists in the folder. If it does, add the name
+                // of the picture to the number of appearience in this folder.
                 int i = 2;
                 while (File.Exists(dest + @"\" + newFile))
                 {
@@ -45,7 +45,7 @@ namespace ImageService.Modal
 
                 File.Copy(path, dest + @"\" + newFile);
 
-                //creating thumbnail directory
+                //creating thumbnail directory.
                 dest = outputDir + @"\Thumbnail\" + year + @"\" + month;
                 response = addingThumbCopyToThumbnailFolder(path, dest, out result);
                 if (result == false)
@@ -61,13 +61,13 @@ namespace ImageService.Modal
             return response;
         }
 
-        //retrieves the datetime WITHOUT loading the whole image
+        //retrieves the datetime WITHOUT loading the whole image.
         public static DateTime GetDateTakenFromImage(string path)
         {
             using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read))
             using (Image myImage = Image.FromStream(fs, false, false))
             {
-                // Get the Date Created property 
+                // Get the Date Created property. 
                 PropertyItem propertyItem = myImage.PropertyItems.FirstOrDefault(i => i.Id == 306);
                 if (propertyItem != null)
                 {
@@ -81,13 +81,13 @@ namespace ImageService.Modal
                 }
                 else
                 {
-                    //If the creation time dosen't exists, the method will return the copy date.
+                    //If the creation time dosen't exist, the method will return the copy date.
                     return DateTime.Now;
                 }
             }
         }
 
-        //If it doesn't exists - create new folder in the destination path.
+        //If it doesn't exist - create new folder in the destination path.
         public string CreateFolder(string dest, out bool result)
         {
             try
@@ -97,11 +97,11 @@ namespace ImageService.Modal
             catch (Exception e)
             {
                 result = false;
-                return "faild to create directory. error: " + e.ToString();
+                return "Failed to create the directory. error: " + e.ToString();
             }
 
             result = true;
-            return "directory created successfully.";
+            return "The directory was created successfully.";
         }
 
         //Create a thumb size copy of the picture and save it in the 'Thumbnail' filder
@@ -125,11 +125,11 @@ namespace ImageService.Modal
             catch (Exception e)
             {
                 result = false;
-                return "faild to create thumb picture in thumbnail folder. error: " + e.ToString();
+                return "Faild to create thumb picture in thumbnail folder. error: " + e.ToString();
             }
 
             result = true;
-            return "Thumb copy is saved in the 'Thumbnail' folder.";
+            return "The thumb copy is saved in the 'Thumbnail' folder.";
         }
     }
 }
