@@ -1,16 +1,17 @@
-﻿using ImageService.Modal;
+using ImageService.Modal;
+using ImageService.Controller.Handlers;
+using ImageService.Modal.Event;
+using ImageService.Infrastructure.Enums;
 using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using ImageService.Infrastructure;
-using ImageService.Infrastructure.Enums;
 using ImageService.Logging;
 using ImageService.Logging.Modal;
 using System.Text.RegularExpressions;
-using ImageService.Modal.Event;
+using System.Threading;
 
 namespace ImageService.Controller.Handlers
 {
@@ -18,75 +19,80 @@ namespace ImageService.Controller.Handlers
     {
         #region Members
         private IImageController m_controller;              // The Image Processing Controller
-        private ILoggingService m_logging;
-        private FileSystemWatcher m_dirWatcher;             // The Watcher of the Dir
+        private ILoggingService m_logger;
+        private List<FileSystemWatcher> m_dirWatchers;      // The Watchers of the Dir
         private string m_path;                              // The Path of directory
         #endregion
 
-        // The Event That Notifies that the Directory is being closed
+        public delegate void CloseCommand(object sender, CommandRecievedEventArgs e);
+        private Dictionary<int, Delegate> commands;
+
+        // The Event That Notifies that the Directory is being closed.
         public event EventHandler<DirectoryCloseEventArgs> DirectoryClose;
 
-        public DirectoyHandler(String path, IImageController controller, ILoggingService logging)
+        public DirectoyHandler(IImageController controller, ILoggingService logger)
         {
-            this.m_path = path;
-            this.m_controller = controller;
-            this.m_logging = logging;
-            m_dirWatcher = new FileSystemWatcher();
+            m_controller = controller;
+            m_logger = logger;
+            m_dirWatchers = new List<FileSystemWatcher>();
+
+            commands = new Dictionary<int, Delegate>()
+            {
+                {(int)CommandEnum.CloseCommand, new CloseCommand(CloseHandler) }
+            };
         }
 
-        // The Function Recieves the directory to Handle
-        public bool StartHandleDirectory(string dirPath)
+        public void StartHandleDirectory(string dirPath)
         {
-            if (System.IO.Directory.Exists(dirPath))
+            m_path = dirPath;
+
+            foreach (string extension in new string [] { "*.jpg", "*.png", "*.gif", "*.bmp"})
             {
-                m_logging.Log("handling directory: " + dirPath, MessageTypeEnum.INFO);
-                m_dirWatcher.Path = dirPath;
-                //m_dirWatcher.NotifyFilter = NotifyFilters.LastWrite;
-                //m_dirWatcher.Filter = "*.jpg;*.gif;*.bmp;*.png";
-                //m_dirWatcher.Filter = "*.*";
-                //m_dirWatcher.Created += new FileSystemEventHandler(OnCreated);
-                m_dirWatcher.Changed += new FileSystemEventHandler(OnChanged);
-                m_dirWatcher.EnableRaisingEvents = true;
-                return true;    //the directory exists
+                FileSystemWatcher watcher = new FileSystemWatcher(m_path, extension);
+                watcher.NotifyFilter = NotifyFilters.LastAccess | NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName;
+                watcher.EnableRaisingEvents = true;
+                watcher.Created += new FileSystemEventHandler(OnCreated);
+                m_dirWatchers.Add(watcher);
+            }
+            m_logger.Log($"Watcher has been created for: {m_path}", MessageTypeEnum.INFO);
+        }
+
+        private void OnCreated(object sender, FileSystemEventArgs e)
+        {
+            string msg = m_controller.ExecuteCommand((int)CommandEnum.NewFileCommand, new string[] { e.FullPath }, out bool resultSuccesful);
+
+            //checking if the execution was succesfull.
+            if (resultSuccesful)
+            {
+                m_logger.Log(msg, MessageTypeEnum.INFO);
             }
             else
             {
-                m_logging.Log("could not find directory: " + dirPath, MessageTypeEnum.WARNING);
-                return false;   //the directory isn't exists
+                m_logger.Log(msg, MessageTypeEnum.FAIL);
             }
         }
-        /*
-        private void OnCreated(object sender, FileSystemEventArgs e)
-        {
-            m_logging.Log("new file created: " + e.Name, MessageTypeEnum.INFO);
-           OnCommandRecieved(this, new CommandRecievedEventArgs(1, new String[] { e.FullPath, e.Name }, e.FullPath));
-        }*/
 
-        private void OnChanged(object sender, FileSystemEventArgs e)
-        {
-            m_logging.Log("directory changed: " + e.Name, MessageTypeEnum.INFO);
-            m_logging.Log("change type: " + e.ChangeType.GetType(), MessageTypeEnum.INFO);
-            OnCommandRecieved(this, new CommandRecievedEventArgs(1, new String[] { e.FullPath, e.Name }, e.FullPath));
-        }
-
-        // The Event that will be activated upon new Command
         public void OnCommandRecieved(object sender, CommandRecievedEventArgs e)
         {
-            m_logging.Log("recieved command for directory: " + e.RequestDirPath, MessageTypeEnum.INFO);
-            bool resultSuccess;
-            string execResult = m_controller.ExecuteCommand(e.CommandID, e.Args, out resultSuccess);
-            if (!resultSuccess)
+            //first need to check if the command is mentioned.
+            if (e.RequestDirPath.Equals(m_path) || e.RequestDirPath.Equals("*"))
             {
-                m_logging.Log("execition failed. error: " + execResult, MessageTypeEnum.FAIL);
+                if (!commands.TryGetValue(e.CommandID, out Delegate command))
+                {
+                    command.DynamicInvoke(sender, e);
+                }
             }
         }
 
-        public void onClose(object send, DirectoryCloseEventArgs e)
+        public void CloseHandler(object sender, CommandRecievedEventArgs e)
         {
-            m_logging.Log("closing handler for directory: " + m_path, MessageTypeEnum.INFO);
-            DirectoryClose(this, e);
-            m_dirWatcher.EnableRaisingEvents = false;
-            m_dirWatcher.Dispose();
+            //stop the listening and send message.
+            foreach (FileSystemWatcher watcher in m_dirWatchers)
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+            DirectoryClose?.Invoke(this, new DirectoryCloseEventArgs(m_path, "stopped listening to the following folder: "));
         }
     }
 }
