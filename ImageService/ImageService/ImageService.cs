@@ -1,18 +1,21 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
 using System.ServiceProcess;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using ImageService.Logging;
-using ImageService.Logging.Modal;
-using ImageService.Modal;
-using ImageService.Controller;
 using ImageService.Server;
+using ImageService.Controller;
+using ImageService.Model;
+using ImageService.Logging;
+using ImageService.Logging.Model;
+using System.Configuration;
+using ImageService.Infrastructure;
+using System.Timers;
 
 namespace ImageService
 {
@@ -41,96 +44,119 @@ namespace ImageService
 
     public partial class ImageService : ServiceBase
     {
-        private System.ComponentModel.IContainer components;
-        private System.Diagnostics.EventLog eventLog1;
-        
-        public ImageService()
+        private int eventId = 1;
+        private ImageServer m_imageServer; // The Image Server
+        private IImageServiceModel model;
+        private IImageController controller;
+        private ILoggingService logging;
+        private EventLog eventLog1;
+
+       /************************************************************************
+       *The Input: arguments.
+       *The Output: -.
+       *The Function operation: The function builds an ImageService.
+       *************************************************************************/
+        public ImageService(string[] args)
         {
+            // First reading from the appConfig creating the eventLog.
             InitializeComponent();
-            eventLog1 = new System.Diagnostics.EventLog();
-            if (!System.Diagnostics.EventLog.SourceExists("MySource"))
+            string eventSourceName = ConfigurationManager.AppSettings["SourceName"];
+            string logName = ConfigurationManager.AppSettings["LogName"];
+
+            //If there are arguments.
+            if (args.Count() > 0)
             {
-                System.Diagnostics.EventLog.CreateEventSource("MySource", "MyNewLog");
+                eventSourceName = args[0];
             }
-            eventLog1.Source = "MySource";
-            eventLog1.Log = "MyNewLog";
-        }
-
-        protected override void OnStart(string[] args)
-        {
-            eventLog1.WriteEntry("In OnStart");
-
-            // Update the service state to Start Pending.  
-            ServiceStatus serviceStatus = new ServiceStatus();
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_START_PENDING;
-            serviceStatus.dwWaitHint = 100000;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-
-            // Update the service state to Running.  
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_RUNNING;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-
-            // creating our logger
-            ILoggingService logger = new LoggingService();
-            logger.MessageReceived += OnMessage;
-            
-            // creating the ImageModal, need still to give the right parametres
-            IImageServiceModal modal = new ImageServiceModal("C:\\Users\\simbe\\Desktop\\output", 120);
-
-            // creating the Controller
-            IImageController controller = new ImageController(modal);
-
-            // creating the Server, need still to give the right parametres
-            ImageServer server = new ImageServer(controller, logger, new string[] { "C:\\Users\\simbe\\Desktop\\my_images" });
-        }
-
-        protected override void OnPause()
-        {
-            eventLog1.WriteEntry("In OnPause");
-
-            // Update the service state to Pause Pending.  
-            ServiceStatus serviceStatus = new ServiceStatus();
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_PAUSE_PENDING;
-            serviceStatus.dwWaitHint = 100000;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-
-            // Update the service state to Paused.  
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_PAUSED;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-        }
-
-        protected override void OnContinue()
-        {
-            eventLog1.WriteEntry("In OnContinue");
-
-            // Update the service state to Continue Pending.  
-            ServiceStatus serviceStatus = new ServiceStatus();
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_CONTINUE_PENDING;
-            serviceStatus.dwWaitHint = 100000;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-        }
-
-        protected override void OnStop()
-        {
-            eventLog1.WriteEntry("In onStop.");
-
-            // Update the service state to Stop Pending.  
-            ServiceStatus serviceStatus = new ServiceStatus();
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_STOP_PENDING;
-            serviceStatus.dwWaitHint = 100000;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-
-            // Update the service state to Stopped.  
-            serviceStatus.dwCurrentState = ServiceState.SERVICE_STOPPED;
-            SetServiceStatus(this.ServiceHandle, ref serviceStatus);
-        }
-
-        private void OnMessage(object sender, MessageRecievedEventArgs e)
-        {
-            eventLog1.WriteEntry(e.Message);
+            if (args.Count() > 1)
+            {
+                logName = args[1];
+            }
+            eventLog1 = new System.Diagnostics.EventLog();
+            if (!System.Diagnostics.EventLog.SourceExists(eventSourceName))
+            {
+                System.Diagnostics.EventLog.CreateEventSource(eventSourceName, logName);
+            }
+            eventLog1.Log = logName;
+            eventLog1.Source = eventSourceName;
         }
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool SetServiceStatus(IntPtr handle, ref ServiceStatus serviceStatus);
+
+       /************************************************************************
+       *The Input: arguments.
+       *The Output: -.
+       *The Function operation: The function starts the service.
+       *************************************************************************/
+        protected override void OnStart(string[] args)
+        {
+            eventLog1.WriteEntry("Starting The ImageService");
+            InitializeService();
+        }
+
+        protected override void OnStop()
+        {
+            eventLog1.WriteEntry("Stopping The ImageService");
+            this.m_imageServer.CloseServer();
+        }
+
+       /************************************************************************
+       *The Input: The sender and the events descriptors.
+       *The Output: -.
+       *The Function operation: The function updates the entry according to the 
+       *recieved message.
+       *************************************************************************/
+        public void OnLog(object sender, MessageRecievedEventArgs e)
+        {
+            //Updating the log according to the message (INFO/ FAIL/ WARNING).
+            switch (e.Status)
+            {
+                case MessageTypeEnum.INFO:
+                    eventLog1.WriteEntry(e.Message, EventLogEntryType.Information, eventId++);
+                    break;
+                case MessageTypeEnum.FAIL:
+                    eventLog1.WriteEntry(e.Message, EventLogEntryType.FailureAudit, eventId++);
+                    break;
+                case MessageTypeEnum.WARNING:
+                    eventLog1.WriteEntry(e.Message, EventLogEntryType.Warning, eventId++);
+                    break;
+            }
+        }
+
+       /************************************************************************
+       *The Input: -.
+       *The Output: -.
+       *The Function operation: The function initiallizes the eventlog.
+       *************************************************************************/
+        private void InitializeComponent()
+        {
+            this.eventLog1 = new System.Diagnostics.EventLog();
+            ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.eventLog1)).EndInit();
+        }
+
+       /************************************************************************
+       *The Input: -.
+       *The Output: -.
+       *The Function operation: The function reads from the appConfig and initiallizes
+       * and creates members.
+       *************************************************************************/
+        private void InitializeService()
+        {
+            //Reading appConfig.
+            string[] handlerPaths = ConfigurationManager.AppSettings["Handler"].Split(';');
+            string outputDir = ConfigurationManager.AppSettings["OutputDir"];
+            int thumbnailSize = Int32.Parse(ConfigurationManager.AppSettings["ThumbnailSize"]);
+
+            //Initializing and creating the members.
+            this.model = new ImageServiceModel(outputDir, thumbnailSize);
+            this.logging = new LoggingService();
+            this.controller = new ImageController(this.model);
+            logging.MessageRecieved += OnLog;
+            this.m_imageServer = new ImageServer(this.controller, this.logging, handlerPaths);
+            //Updating the entry.
+            eventLog1.WriteEntry("End Of Initialization");
+        }
     }
 }

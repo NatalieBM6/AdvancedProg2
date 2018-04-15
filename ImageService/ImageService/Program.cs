@@ -9,15 +9,17 @@ namespace ImageService
 {
     static class Program
     {
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
-        static void Main(string[] args)
+        /************************************************************************
+        *The Input: arguments.
+        *The Output: -
+        *The Function operation: The function creates and run the application.
+        *************************************************************************/
+        static void Main(string [] args)
         {
             ServiceBase[] ServicesToRun;
             ServicesToRun = new ServiceBase[]
             {
-                new ImageService()
+                new ImageService(args)
             };
             ServiceBase.Run(ServicesToRun);
         }

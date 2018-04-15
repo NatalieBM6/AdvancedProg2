@@ -2,14 +2,12 @@
 using ImageService.Controller.Handlers;
 using ImageService.Infrastructure.Enums;
 using ImageService.Logging;
-using ImageService.Modal;
-using ImageService.Modal.Event;
+using ImageService.Model;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Configuration;
 
 namespace ImageService.Server
 {
@@ -18,65 +16,69 @@ namespace ImageService.Server
         #region Members
         private IImageController m_controller;
         private ILoggingService m_logging;
-        private List<DirectoyHandler> handlersList;
+        private List<IDirectoryHandler> handlers;
+        private string[] handlersPath;
         #endregion
 
         #region Properties
+        //The event that notifies about a new Command being recieved.
         public event EventHandler<CommandRecievedEventArgs> CommandRecieved;
-        public event EventHandler<DirectoryCloseEventArgs> CloseCommand;
         #endregion
 
-        public ImageServer(ILoggingService logging, IImageServiceModal modal)
+        /************************************************************************
+        *The Input: ImageController a LoggingService and the way to a handler.
+        *The Output: -
+        *The Function operation: The function builds a server.
+        *************************************************************************/
+        public ImageServer(IImageController controller, ILoggingService logging, string[] handlersPath)
         {
-            this.m_logging = logging;
-            this.m_controller = new ImageController(modal);
-
-            handlersList = new List<DirectoyHandler>();
-            DirectoyHandler current;
-
-            string directories = ConfigurationManager.AppSettings["Handler"];
-            string[] handlersDirectories = directories.Split(';');
-            for (int i = 0; i < handlersDirectories.Length; i++)
+            m_controller = controller;
+            m_logging = logging;
+            handlers = new List<IDirectoryHandler>();
+            this.handlersPath = handlersPath;
+            //Creating handlers.
+            for (int i = 0; i < handlersPath.Length; i++)
             {
-                current = CreateHandler(handlersDirectories[i]);
-                handlersList.Add(current);
+                handlers.Add(new DirectoyHandler(this.m_controller, this.m_logging));
+                handlers[i].StartHandleDirectory(handlersPath[i]);
+                CommandRecieved += handlers[i].OnCommandRecieved;
+                handlers[i].DirectoryClose += OnHandlerClose;
+                // Logging each handler into the entry.
+                m_logging.Log("Directory Handler created at path:" + handlersPath[i], Logging.Model.MessageTypeEnum.INFO);
             }
         }
 
-        public DirectoyHandler CreateHandler(String directory)
+        /************************************************************************
+        *The Input: -.
+        *The Output: -
+        *The Function operation: The function does nothing for now.
+        *************************************************************************/
+        public void SendCommand()
         {
-            DirectoyHandler h = new DirectoyHandler(directory, m_controller, m_logging);
-
-            if (h.StartHandleDirectory(directory))
-            {
-                CommandRecieved += h.OnCommandRecieved;
-                h.DirectoryClose += CloseCommand;
-                m_logging.Log("Starting handler for the directory: " + directory, Logging.Modal.MessageTypeEnum.INFO);
-
-                return h;
-            }
-            else
-            {
-                return null;
-            }
+            //
         }
 
-        public void SendCommand(CommandRecievedEventArgs e)
-        {
-            CommandRecieved?.Invoke(this, e);
-        }
-
+        /************************************************************************
+        *The Input: -.
+        *The Output: -
+        *The Function operation: The function invoke the event.
+        *************************************************************************/
         public void CloseServer()
         {
-            m_logging.Log("Closing the server.", Logging.Modal.MessageTypeEnum.INFO);
-            CloseCommand?.Invoke(this, null);
+            CommandRecievedEventArgs commandRecEventArgs = new CommandRecievedEventArgs((int)CommandEnum.CloseCommand, null, null);
+            CommandRecieved?.Invoke(this, commandRecEventArgs);
         }
 
-        public void OnCloseServer(object sender, DirectoryCloseEventArgs e)
+        /************************************************************************
+        *The Input: sender and an event.
+        *The Output: -
+        *The Function operation: The function is called when the handler is closed.
+        *************************************************************************/
+        public void OnHandlerClose(object sender, DirectoryCloseEventArgs e)
         {
-            DirectoyHandler dh = (DirectoyHandler)sender;
-            CommandRecieved -= dh.OnCommandRecieved;
-            dh.DirectoryClose -= OnCloseServer;
+            IDirectoryHandler dirHandler = (IDirectoryHandler)sender;
+            CommandRecieved -= dirHandler.OnCommandRecieved;
+            m_logging.Log("Stop handle directory " + e.Message, Logging.Model.MessageTypeEnum.INFO);
         }
     }
 }
